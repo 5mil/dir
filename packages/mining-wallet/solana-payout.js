@@ -1,104 +1,72 @@
+'use strict';
 /**
- * Solana Payout Bridge
- * ====================
- * Allows mining rewards to be forwarded to a Solana wallet address.
- * Uses wDGB (wrapped DGB) on Solana via bridge, or direct SOL address
- * for pools that support multi-coin payout routing.
+ * solana-payout.js
+ * ================
+ * Payout mode manager for dir mining-wallet.
  *
  * Modes:
- *   1. STORE_ADDRESS  — user provides Solana address; pool pays direct
- *   2. BRIDGE         — DGB → wDGB bridge (Solana)
+ *   dgb_integrated  — use integrated HD wallet DGB address
+ *   dgb_external    — user-supplied DGB D... address
+ *   solana          — user-supplied SOL base58 address
+ *   custom          — any address + coin ticker (ETH validated via eth-validator)
  *
- * Stores payout config in /etc/dir/payout-config.json
+ * Config written to: /etc/dir/payout-config.json  (mode 600)
  */
 
 const fs   = require('fs');
 const path = require('path');
+const ethValidator = require('./eth-validator');
 
-const CONFIG_PATH  = '/etc/dir/payout-config.json';
-const SOL_REGEX    = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const DGB_REGEX    = /^D[a-km-zA-HJ-NP-Z1-9]{25,34}$/;
-const ETH_REGEX    = /^0x[a-fA-F0-9]{40}$/;
+const PAYOUT_CONFIG = process.env.PAYOUT_CONFIG || '/etc/dir/payout-config.json';
+const WALLET_CACHE  = process.env.WALLET_CACHE  || '/etc/dir/wallet-cache.json';
 
-// ---- Config helpers --------------------------------------- //
-
-function loadConfig() {
-  if (!fs.existsSync(CONFIG_PATH)) return defaultConfig();
-  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
-  catch { return defaultConfig(); }
-}
-
-function defaultConfig() {
-  return {
-    mode:            'dgb_integrated', // 'dgb_integrated' | 'dgb_external' | 'solana' | 'custom'
-    dgb_address:     null,             // integrated wallet address
-    solana_address:  null,             // SOL payout address
-    custom_address:  null,             // any other coin address
-    custom_coin:     null,
-    updated:         null
-  };
-}
-
-function saveConfig(cfg) {
-  fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-  cfg.updated = new Date().toISOString();
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), { mode: 0o600 });
-}
-
-// ---- Payout address setters ------------------------------- //
-
-function setDGBIntegrated(dgbAddress) {
-  if (!DGB_REGEX.test(dgbAddress)) throw new Error('Invalid DGB address');
-  const cfg = loadConfig();
-  cfg.mode        = 'dgb_integrated';
-  cfg.dgb_address = dgbAddress;
-  saveConfig(cfg);
+function _write(cfg) {
+  const dir = path.dirname(PAYOUT_CONFIG);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(PAYOUT_CONFIG, JSON.stringify({ ...cfg, updated: new Date().toISOString() }, null, 2), { mode: 0o600 });
   return cfg;
 }
 
-function setDGBExternal(dgbAddress) {
-  if (!DGB_REGEX.test(dgbAddress)) throw new Error('Invalid DGB address');
-  const cfg = loadConfig();
-  cfg.mode        = 'dgb_external';
-  cfg.dgb_address = dgbAddress;
-  saveConfig(cfg);
-  return cfg;
+function _readWalletAddress() {
+  try { return JSON.parse(fs.readFileSync(WALLET_CACHE, 'utf8')).address; }
+  catch (_) { return null; }
 }
 
-function setSolanaAddress(solAddress) {
-  if (!SOL_REGEX.test(solAddress)) throw new Error('Invalid Solana address');
-  const cfg = loadConfig();
-  cfg.mode           = 'solana';
-  cfg.solana_address = solAddress;
-  saveConfig(cfg);
-  return cfg;
+// ── Public API ────────────────────────────────────────────────────────────── //
+
+function setDGBIntegrated() {
+  const address = _readWalletAddress();
+  if (!address) throw new Error('No integrated wallet found. Create a wallet first.');
+  return _write({ mode: 'dgb_integrated', address, coin: 'DGB' });
+}
+
+function setDGBExternal(address) {
+  if (!/^D[A-Za-z0-9]{33}$/.test(address)) throw new Error('Invalid DGB address (must start with D, 34 chars).');
+  return _write({ mode: 'dgb_external', address, coin: 'DGB' });
+}
+
+function setSolanaAddress(address) {
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) throw new Error('Invalid Solana address (base58, 32–44 chars).');
+  return _write({ mode: 'solana', address, coin: 'SOL' });
 }
 
 function setCustomAddress(address, coin) {
-  const cfg = loadConfig();
-  cfg.mode           = 'custom';
-  cfg.custom_address = address;
-  cfg.custom_coin    = coin.toUpperCase();
-  saveConfig(cfg);
-  return cfg;
-}
+  if (!address) throw new Error('Address required.');
+  if (!coin)    throw new Error('Coin ticker required.');
 
-function getPayoutAddress() {
-  const cfg = loadConfig();
-  switch (cfg.mode) {
-    case 'dgb_integrated': return { coin: 'DGB', address: cfg.dgb_address, source: 'integrated_wallet' };
-    case 'dgb_external':   return { coin: 'DGB', address: cfg.dgb_address, source: 'external' };
-    case 'solana':         return { coin: 'SOL', address: cfg.solana_address, source: 'solana_wallet' };
-    case 'custom':         return { coin: cfg.custom_coin, address: cfg.custom_address, source: 'custom' };
-    default:               return null;
+  // ETH gets full EIP-55 checksum validation
+  if (coin.toUpperCase() === 'ETH') {
+    const result = ethValidator.validateETHAddress(address);
+    if (!result.valid) throw new Error(result.error);
+    address = result.address;
   }
+
+  return _write({ mode: 'custom', address, coin: coin.toUpperCase() });
 }
 
-module.exports = {
-  loadConfig,
-  setDGBIntegrated,
-  setDGBExternal,
-  setSolanaAddress,
-  setCustomAddress,
-  getPayoutAddress,
-};
+function readPayoutConfig() {
+  try { return JSON.parse(fs.readFileSync(PAYOUT_CONFIG, 'utf8')); }
+  catch (_) { return null; }
+}
+
+module.exports = { setDGBIntegrated, setDGBExternal, setSolanaAddress, setCustomAddress, readPayoutConfig };

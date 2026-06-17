@@ -1,117 +1,128 @@
-# Mining Wallet, Payout, Pool Selector & USB ASIC Design
+# mining-wallet Design
 
-## Architecture Overview
-
-```
-[MiningTab UI]
-      │
-      ▼  /api/mining/*
-[mining-api.js]  ←→  dgb-wallet.js
-                 ←→  solana-payout.js
-                 ←→  pool-config.js
-                 ←→  payout-restart-hook.js
-                 ←→  usb-asic.js
-      │
-      ▼
-/etc/dir/
-  mining-wallet.enc   (AES-256-GCM, mode 600)
-  mining-wallet.enc.addr  (plaintext DGB address, mode 644)
-  payout-config.json  (payout mode + address, mode 600)
-  active-pool.json    (selected pool URL + worker, mode 600)
-  cpuminer.conf       (written by restart hook)
-/etc/cgminer.conf     (written by restart hook)
-```
+> `@dir/mining-wallet` — v0.3.1
+> Branch: `mining-dgb-skein`
 
 ---
 
-## DGB Wallet
+## Overview
 
-- Standard: BIP39 24-word mnemonic + BIP44 HD
-- Derivation: `m/44'/20'/0'/0/0` (DGB coin type 20)
-- Address: P2PKH `0x1E` prefix (`D...`)
-- Encryption: AES-256-GCM, scrypt PIN derivation
-- Storage: `/etc/dir/mining-wallet.enc` (mode 600)
-- Balance: DigiExplorer API `https://digiexplorer.info/api/addr/{address}/balance`
-- Mnemonic: shown once on creation, never logged
+`mining-wallet` is the unified mining wallet, payout, and pool management module for `dir`.
 
-### API Routes
-- `GET  /api/mining/wallet` — address + balance
-- `POST /api/mining/wallet/create` — create new wallet (`{ pin }`)
-- `POST /api/mining/wallet/unlock` — validate PIN, return masked metadata
-- `POST /api/mining/wallet/export` — validate PIN, return full sensitive material (backend only)
+Features:
+- **DGB HD wallet** (BIP39/BIP44, PIN-protected, offline)
+- **Payout modes**: DGB integrated, DGB external, Solana, ETH, Custom coin
+- **Pool selector**: Fennac (primary) + 6 backup DGB pools + custom
+- **Payout/pool restart hook**: auto-restarts miners on config change
+- **USB ASIC plug-and-play**: udev hotplug, usb npm package
+- **Mining Tab**: 5-tab UI (Overview / Wallet / Payout / Pools / ASICs)
 
-### PIN Unlock Modal
-- Modal prompts for PIN, never stores it after close
-- On success: reveals public key, masked private key, derivation path, creation time
-- Full export route exists on backend for future CLI/export tool
+---
+
+## Architecture
+
+```
+mining-api.js  (Express router)
+  ├─ dgb-wallet.js          BIP39/BIP44 HD wallet — DGB
+  ├─ solana-payout.js       Payout mode manager
+  │    └─ eth-validator.js  EIP-55 ETH address validation
+  ├─ pool-config.js         Pool registry + active pool R/W
+  ├─ payout-restart-hook.js fs.watch + 1.5s debounce + miner restart
+  └─ usb-asic.js            USB ASIC detection (usb npm)
+
+ui/
+  MiningTab.tsx    5-tab Mining Tab (Overview/Wallet/Payout/Pools/ASICs)
+  MiningTab.css    Pool cards, modal, payout form styling
+```
 
 ---
 
 ## Payout Modes
 
-| Mode | Description |
-|---|---|
-| `dgb_integrated` | Auto-uses integrated HD wallet address |
-| `dgb_external` | User provides any DGB `D…` address |
-| `solana` | User provides SOL base58 address |
-| `custom` | Any address + coin ticker |
-
-Changing payout config triggers `payout-restart-hook.js` automatically via `fs.watch`.
-
----
-
-## Pool Selector
-
-### Pre-configured Pools
-
-| ID | Name | Algo | Primary |
+| Mode | Coin | Validation | Notes |
 |---|---|---|---|
-| `fennac-skein` | Fennac (dir native) | Skein | ✅ |
-| `dgb-skein-zergpool` | Zergpool — DGB Skein | Skein | — |
-| `dgb-skein-unmineable` | unMineable — DGB Skein | Skein | — |
-| `dgb-skein-aikapool` | Aikapool — DGB Skein | Skein | — |
-| `dgb-skein-miningpoolhub` | MiningPoolHub — DGB Skein | Skein | — |
-| `dgb-odo-digipool` | DigiPool — DGB Odocrypt | Odocrypt | — |
-| `custom` | Custom Pool | custom | — |
+| `dgb_integrated` | DGB | Reads wallet-cache.json | Auto — no user input |
+| `dgb_external` | DGB | `^D[A-Za-z0-9]{33}$` | User provides D... address |
+| `solana` | SOL | base58, 32–44 chars | User provides SOL address |
+| `custom` (ETH) | ETH | EIP-55 checksum (keccak256) | Full checksum + format validation |
+| `custom` (other) | Any | Non-empty string | BTC, LTC, etc. — format not validated |
 
-### API Routes
-- `GET  /api/mining/pools` — all pools + active pool
-- `GET  /api/mining/pools/active` — current active pool
-- `POST /api/mining/pools/select` — set active pool (`{ pool_id, url, worker, password }`)
+### ETH Validation (EIP-55)
 
-Changing active pool triggers `payout-restart-hook.js` automatically via `fs.watch`.
+```
+1. Format check:  /^0x[0-9a-fA-F]{40}$/
+2. Checksum:      keccak256(lowercase_hex)
+                  → each char must match expected upper/lower
+3. Non-checksummed (all-lower or all-upper) → accepted as-is
+4. Error response: HTTP 400 + { error: "Invalid ETH address..." }
+```
 
----
-
-## Payout Restart Hook
-
-`payout-restart-hook.js` watches:
-- `/etc/dir/payout-config.json`
-- `/etc/dir/active-pool.json`
-
-On change (1.5s debounce):
-1. Reads `active-pool.json` + `payout-config.json`
-2. Writes `/etc/dir/cpuminer.conf` + `/etc/cgminer.conf`
-3. Attempts `systemctl restart dir-dgb-skein dir-dgb-skein-gpu dir-fennac`
-4. Falls back to `pkill cpuminer-multi && pkill skein-miner.py` if no systemd services found
+Dependency: `keccak` npm package (`npm install keccak`).
+Fallback: if `keccak` unavailable, format-only validation.
 
 ---
 
-## USB ASIC Detection
+## Pre-configured Pools
 
-1. `lsusb` VID:PID match (GekkoScience, Antminer U-series, Block Erupter, Goldshell Mini, FTDI, custom Skein)
-2. `/dev/ttyUSB*` + `/dev/ttyACM*` serial scan
-3. cgminer API `127.0.0.1:4028` TCP probe
-4. Polls every 10s, emits `asic:detected` on new plug-in
+| ID | Pool | Algo | TLS | Fee |
+|---|---|---|---|---|
+| `fennac-skein` ⭐ | Fennac (dir native) | Skein | ✅ | 1% |
+| `dgb-skein-zergpool` | Zergpool | Skein | ✅ | 0.5% |
+| `dgb-skein-unmineable` | unMineable | Skein | — | 1% |
+| `dgb-skein-aikapool` | Aikapool | Skein | — | 1% |
+| `dgb-skein-miningpoolhub` | MiningPoolHub | Skein | — | 0.9% |
+| `dgb-odo-digipool` | DigiPool (Odocrypt) | Odocrypt | — | 1% |
+| `custom` | Custom | — | — | — |
+
+Active pool stored at `/etc/dir/active-pool.json` (mode 600).
 
 ---
 
-## Security Notes
+## Payout/Pool Restart Hook
 
-- Private key: AES-256-GCM, scrypt PIN derivation, mode 600
-- Mnemonic: shown once on create, never logged
-- Payout config: mode 600
-- Active pool config: mode 600
-- Cpuminer/cgminer conf: mode 640
-- Public address cache: mode 644 (balance-only queries)
-- PIN never persisted in UI state after modal closes
+```
+fs.watch /etc/dir/payout-config.json
+fs.watch /etc/dir/active-pool.json
+         │ (1.5s debounce)
+         ▼
+  read active-pool.json + payout-config.json
+  write /etc/dir/cpuminer.conf
+  write /etc/cgminer.conf
+         │
+         ├── systemctl restart dir-dgb-skein dir-dgb-skein-gpu dir-fennac
+         └── fallback: pkill cpuminer-multi + pkill skein-miner.py
+```
+
+---
+
+## Mining Tab — 5 Tabs
+
+| Tab | Contents |
+|---|---|
+| Overview | Live miner cards (Fennac + DGB Skein hashrate, accepted, uptime) |
+| Wallet | HD wallet create / balance / PIN unlock modal |
+| Payout | Mode dropdown (DGB integrated / external / SOL / ETH / Custom) + address input + ETH live validation |
+| Pools | Pool card grid, stratum URL dropdown, worker name input, Apply Pool button |
+| ASICs | USB device list + re-scan button |
+
+---
+
+## API Routes
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/mining/wallet/create` | Create HD wallet (PIN required) |
+| GET | `/api/mining/wallet/balance` | Get wallet balance |
+| POST | `/api/mining/wallet/unlock` | Unlock wallet (PIN required) |
+| POST | `/api/mining/wallet/export` | Export sensitive wallet data |
+| GET | `/api/mining/payout` | Get current payout config |
+| POST | `/api/mining/payout` | Set payout mode |
+| GET | `/api/mining/pools` | List all pools |
+| GET | `/api/mining/pools/active` | Get active pool |
+| POST | `/api/mining/pools/select` | Select active pool |
+| GET | `/api/mining/asics` | List USB ASIC devices |
+| POST | `/api/mining/asics/scan` | Re-scan USB devices |
+
+---
+
+*mining-wallet v0.3.1 — dir | Stardate 2026.169*

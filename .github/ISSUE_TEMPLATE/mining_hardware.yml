@@ -1,0 +1,50 @@
+name: Mining Hardware Support
+description: Request support for a new ASIC or mining device
+labels: ["hardware", "mining"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us expand USB ASIC plug-and-play support.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device name
+      placeholder: e.g. GekkoScience NewPac
+    validations:
+      required: true
+
+  - type: input
+    id: vid_pid
+    attributes:
+      label: USB VID:PID
+      description: Run `lsusb` with device connected and paste the ID
+      placeholder: e.g. 0483:5740
+
+  - type: dropdown
+    id: algo
+    attributes:
+      label: Mining algorithm
+      options:
+        - SHA256d
+        - Scrypt
+        - Skein
+        - Odocrypt
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: connection
+    attributes:
+      label: Connection type
+      description: USB CDC-ACM, USB HID, USB-to-Ethernet, other?
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes
+      description: cgminer/bfgminer driver name, firmware, any quirks

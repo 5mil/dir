@@ -1,0 +1,14 @@
+{
+  "name": "@dir/plugin-dir-governance",
+  "version": "0.1.0",
+  "description": "Dir Governance plugin — three-node ACL (solo/board/open), WikiTrust reputation, moderation queue, diff view, rollback",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "dependencies": {
+    "@nocobase/server": "*",
+    "@nocobase/database": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

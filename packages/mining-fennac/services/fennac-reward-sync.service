@@ -1,0 +1,16 @@
+[Unit]
+Description=Fennac Reward Sync — posts mining stats to dir
+After=fennac-tracker.service
+Wants=fennac-tracker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/fennac/dir-sync.env
+ExecStart=/bin/bash /opt/dir/packages/mining-fennac/dir-reward-sync.sh ${DIR_API_URL} ${DIR_API_KEY} 300
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

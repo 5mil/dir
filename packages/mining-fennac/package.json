@@ -1,0 +1,6 @@
+{
+  "name": "@dir/mining-fennac",
+  "version": "0.1.0",
+  "description": "Fennac pool miner deep integration for dir — FWSMP daemon, share submission, reward tracking, reputation sync",
+  "license": "MIT"
+}

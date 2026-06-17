@@ -1,0 +1,16 @@
+[Unit]
+Description=DigiByte Skein Reward Sync — posts stats to dir
+After=dgb-skein-tracker.service
+Wants=dgb-skein-tracker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/dgb-skein/dir-sync.env
+ExecStart=/bin/bash /opt/dir/packages/mining-dgb-skein/dgb-reward-sync.sh ${DIR_API_URL} ${DIR_API_KEY} 300
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

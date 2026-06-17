@@ -1,0 +1,6 @@
+{
+  "name": "@dir/mining-dgb-skein",
+  "version": "0.1.0",
+  "description": "DigiByte Skein miner for dir — CPU/GPU Stratum client, pool config, stunnel TLS, dir reputation sync",
+  "license": "MIT"
+}

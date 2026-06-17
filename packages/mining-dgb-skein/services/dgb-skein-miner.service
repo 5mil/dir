@@ -1,0 +1,15 @@
+[Unit]
+Description=DigiByte Skein CPU Miner — dir
+After=stunnel-dgb-skein.service
+Wants=stunnel-dgb-skein.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/dir/packages/mining-dgb-skein/skein-miner.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

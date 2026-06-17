@@ -6,12 +6,6 @@
  *
  * DGB BIP44 path: m/44'/20'/0'/0/0
  * (coin type 20 = DigiByte)
- *
- * Exports:
- *   createWallet()       — generate new wallet, save encrypted
- *   loadWallet(pin)      — decrypt and return wallet
- *   getAddress()         — return DGB address (no pin needed, public)
- *   getBalance(address)  — query DigiExplorer API
  */
 
 const bip39  = require('bip39');
@@ -25,8 +19,6 @@ const WALLET_PATH = process.env.DGB_WALLET_PATH || '/etc/dir/mining-wallet.enc';
 const DGB_COIN_TYPE = 20;
 const DGB_DERIVATION = `m/44'/${DGB_COIN_TYPE}'/0'/0/0`;
 const DIGIEXPLORER_API = 'https://digiexplorer.info/api';
-
-// ---- Encryption helpers ----------------------------------- //
 
 function encrypt(text, pin) {
   const salt = crypto.randomBytes(16);
@@ -46,21 +38,15 @@ function encrypt(text, pin) {
 function decrypt(blob, pin) {
   const { salt, iv, tag, data } = JSON.parse(blob);
   const key = crypto.scryptSync(pin, Buffer.from(salt, 'hex'), 32);
-  const decipher = crypto.createDecipheriv(
-    'aes-256-gcm', key, Buffer.from(iv, 'hex')
-  );
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'hex'));
   decipher.setAuthTag(Buffer.from(tag, 'hex'));
   return decipher.update(Buffer.from(data, 'hex')) + decipher.final('utf8');
 }
 
-// ---- DGB address from public key -------------------------- //
-
 function pubkeyToDGBAddress(pubkeyBuffer) {
-  // DigiByte mainnet P2PKH prefix: 0x1E (30)
   const sha256 = crypto.createHash('sha256').update(pubkeyBuffer).digest();
   const ripe   = crypto.createHash('ripemd160').update(sha256).digest();
   const versioned = Buffer.concat([Buffer.from([0x1E]), ripe]);
-  // Double SHA256 checksum
   const cs1 = crypto.createHash('sha256').update(versioned).digest();
   const cs2 = crypto.createHash('sha256').update(cs1).digest();
   const full = Buffer.concat([versioned, cs2.slice(0, 4)]);
@@ -82,10 +68,8 @@ function base58Encode(buf) {
   return result;
 }
 
-// ---- Public API ------------------------------------------- //
-
 function createWallet(pin) {
-  const mnemonic = bip39.generateMnemonic(256); // 24 words
+  const mnemonic = bip39.generateMnemonic(256);
   const seed     = bip39.mnemonicToSeedSync(mnemonic);
   const root     = HDKey.fromMasterSeed(seed);
   const child    = root.derive(DGB_DERIVATION);
@@ -102,8 +86,9 @@ function createWallet(pin) {
 
   fs.mkdirSync(path.dirname(WALLET_PATH), { recursive: true });
   fs.writeFileSync(WALLET_PATH, encrypt(payload, pin), { mode: 0o600 });
+  savePublicAddress(address);
 
-  return { address, mnemonic }; // mnemonic shown ONCE
+  return { address, mnemonic };
 }
 
 function loadWallet(pin) {
@@ -112,12 +97,33 @@ function loadWallet(pin) {
   return JSON.parse(decrypt(blob, pin));
 }
 
+function unlockWallet(pin) {
+  const wallet = loadWallet(pin);
+  return {
+    address: wallet.address,
+    publicKey: wallet.publicKey,
+    privateKeyMasked: `${wallet.privateKey.slice(0, 6)}••••••••${wallet.privateKey.slice(-6)}`,
+    derivation: wallet.derivation,
+    created: wallet.created,
+    unlocked: true,
+  };
+}
+
+function exportSensitiveWallet(pin) {
+  const wallet = loadWallet(pin);
+  return {
+    address: wallet.address,
+    publicKey: wallet.publicKey,
+    privateKey: wallet.privateKey,
+    mnemonic: wallet.mnemonic,
+    derivation: wallet.derivation,
+    created: wallet.created,
+  };
+}
+
 function getAddress() {
-  // Returns stored address without decrypting private key
   if (!fs.existsSync(WALLET_PATH)) return null;
   try {
-    const raw = fs.readFileSync(WALLET_PATH, 'utf8');
-    // Address is safe to cache separately
     const addrFile = WALLET_PATH + '.addr';
     if (fs.existsSync(addrFile)) return fs.readFileSync(addrFile, 'utf8').trim();
     return null;
@@ -133,9 +139,17 @@ async function getBalance(address) {
     https.get(`${DIGIEXPLORER_API}/addr/${address}/balance`, res => {
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(parseFloat(data) / 1e8)); // satoshis → DGB
+      res.on('end', () => resolve(parseFloat(data) / 1e8));
     }).on('error', reject);
   });
 }
 
-module.exports = { createWallet, loadWallet, getAddress, savePublicAddress, getBalance };
+module.exports = {
+  createWallet,
+  loadWallet,
+  unlockWallet,
+  exportSensitiveWallet,
+  getAddress,
+  savePublicAddress,
+  getBalance,
+};

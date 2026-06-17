@@ -1,0 +1,16 @@
+[Unit]
+Description=dir Self-Hosted Stack (Docker Compose)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/dir/deploy/self-hosted
+ExecStart=/usr/bin/docker compose --env-file .env up -d
+ExecStop=/usr/bin/docker compose down
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

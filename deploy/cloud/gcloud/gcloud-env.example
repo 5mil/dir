@@ -1,0 +1,6 @@
+# GCloud deployment environment
+# Set these before running gcloud-deploy.sh
+
+GCLOUD_PROJECT=your-gcp-project-id
+GCLOUD_ZONE=us-central1-a
+GCLOUD_VM=dir-vm

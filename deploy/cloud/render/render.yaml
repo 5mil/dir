@@ -1,25 +1,75 @@
+# =============================================================
+# dir — Render.com Deployment (Blueprint)
+# Deploys: NocoBase app + PostgreSQL (Render managed)
+#
+# Usage:
+#   1. Push this repo to GitHub
+#   2. Go to render.com/dashboard → New → Blueprint
+#   3. Connect github.com/5mil/dir → branch: cloud-hosting
+#   4. Render auto-provisions all services below
+# =============================================================
+
 services:
+
+  # ---- NocoBase Web Service --------------------------------- #
   - type: web
     name: dir-app
     runtime: docker
     dockerfilePath: ./deploy/cloud/render/Dockerfile
+    branch: cloud-hosting
     plan: free
+    region: oregon
+    healthCheckPath: /api/health
     envVars:
+      - key: DB_DIALECT
+        value: postgres
+      - key: DB_HOST
+        fromDatabase:
+          name: dir-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: dir-postgres
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: dir-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: dir-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: dir-postgres
+          property: password
+      - key: APP_KEY
+        generateValue: true
+      - key: ENCRYPTION_FIELD_KEY
+        generateValue: true
       - key: APP_ENV
         value: production
       - key: APP_PORT
-        value: 13000
-      - key: APP_KEY
-        generateValue: true
-      - key: DB_DIALECT
-        value: postgres
-      - key: DATABASE_URL
-        fromDatabase:
-          name: dir-db
+        value: "10000"
+      - key: REDIS_URL
+        fromService:
+          name: dir-redis
+          type: redis
           property: connectionString
+      - key: LOCAL_STORAGE_DEST
+        value: /app/nocobase/storage
 
-databases:
-  - name: dir-db
+  # ---- Redis ------------------------------------------------ #
+  - type: redis
+    name: dir-redis
     plan: free
-    databaseName: dir_db
-    user: dir_user
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+
+# ---- Managed PostgreSQL ------------------------------------ #
+databases:
+  - name: dir-postgres
+    plan: free
+    region: oregon
+    databaseName: dir
+    user: dir

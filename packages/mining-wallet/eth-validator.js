@@ -1,14 +1,9 @@
 'use strict';
 /**
  * eth-validator.js
- * ================
- * Ethereum address validation.
- *   - Format:  0x + 40 hex chars
- *   - EIP-55 checksum (keccak256-based, optional — graceful fallback)
- *
- * dep: keccak (npm install keccak)
+ * EIP-55 checksum + 0x+40hex format validation
+ * dep: keccak (graceful fallback if unavailable)
  */
-
 let keccak;
 try { keccak = require('keccak'); } catch (_) { keccak = null; }
 
@@ -22,7 +17,6 @@ function isValidETHChecksum(address) {
   if (!keccak) return true;
   const addr = address.trim();
   const hex  = addr.slice(2).toLowerCase();
-  // all-lower or all-upper = non-checksummed, accept
   if (addr.slice(2) === hex || addr.slice(2) === hex.toUpperCase()) return true;
   const hash = keccak('keccak256').update(hex).digest('hex');
   for (let i = 0; i < 40; i++) {

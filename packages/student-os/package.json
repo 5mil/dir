@@ -1,0 +1,6 @@
+{
+  "name": "@dir/student-os",
+  "version": "0.1.0",
+  "description": "Student OS — custom Linux installer for dir: Fennac pool mining, WireBruce tunnel, stunnel, FWSMP protocol",
+  "license": "MIT"
+}

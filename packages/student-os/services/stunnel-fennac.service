@@ -1,0 +1,13 @@
+[Unit]
+Description=stunnel TLS Wrapper for Fennac FWSMP — student-os
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/stunnel-fennac.pid
+ExecStart=/usr/bin/stunnel /etc/stunnel/fennac.conf
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,81 @@
+# =============================================================
+# dir Release Workflow
+# Triggers on tag push: v*.*.*
+# Creates GitHub Release with auto-generated changelog
+# Builds and attaches install.sh as release asset
+# =============================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+jobs:
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag
+        id: tag
+        run: echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "${{ steps.tag.outputs.TAG }}" | head -1)
+          if [[ -z "$PREV_TAG" ]]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..${{ steps.tag.outputs.TAG }}"
+          fi
+          CHANGELOG=$(git log $RANGE --pretty=format:"- %s (%h)" --no-merges)
+          echo "CHANGELOG<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist
+          cp deploy/self-hosted/install.sh dist/install-${{ steps.tag.outputs.TAG }}.sh
+          chmod +x dist/install-${{ steps.tag.outputs.TAG }}.sh
+          # Archive full deploy directory
+          tar czf dist/dir-${{ steps.tag.outputs.TAG }}-deploy.tar.gz deploy/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.TAG }}
+          name: dir ${{ steps.tag.outputs.TAG }}
+          body: |
+            ## dir ${{ steps.tag.outputs.TAG }}
+
+            ### Install (self-hosted, one-liner)
+            ```bash
+            curl -fsSL https://github.com/5mil/dir/releases/download/${{ steps.tag.outputs.TAG }}/install-${{ steps.tag.outputs.TAG }}.sh | sudo bash
+            ```
+
+            ### What's Changed
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ### Deployment Options
+            - **Self-hosted**: see `deploy/self-hosted/docs/self-hosted-guide.md`
+            - **Render.com**: Blueprint in `deploy/cloud/render/render.yaml`
+            - **Google Cloud**: `deploy/cloud/gcloud/gcloud-deploy.sh`
+
+            ---
+            Full changelog: https://github.com/5mil/dir/blob/main/CHANGELOG.md
+          files: |
+            dist/install-${{ steps.tag.outputs.TAG }}.sh
+            dist/dir-${{ steps.tag.outputs.TAG }}-deploy.tar.gz
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.TAG, '-') }}

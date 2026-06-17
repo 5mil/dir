@@ -1,0 +1,68 @@
+# =============================================================
+# dir CI — Test + Lint on push/PR to dev and main
+# =============================================================
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci --ignore-scripts 2>/dev/null || echo "No package-lock.json yet"
+
+      - name: Lint shell scripts
+        run: |
+          sudo apt-get install -yq shellcheck
+          find deploy -name '*.sh' -exec shellcheck --severity=warning {} \;
+
+      - name: Check TypeScript
+        run: |
+          if ls packages/*/tsconfig.json 1>/dev/null 2>&1; then
+            npx tsc --noEmit
+          else
+            echo "No tsconfig found — skip TypeScript check"
+          fi
+
+  docker-compose-validate:
+    name: Docker Compose Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: |
+          cd deploy/self-hosted
+          cp .env.example .env
+          sed -i 's/__DB_PASSWORD__/testpass123/g' .env
+          sed -i 's/__JWT_SECRET__/testjwtsecret123456789012/g' .env
+          sed -i 's/__ENCRYPTION_KEY__/testenckey1234567890123456/g' .env
+          docker compose config --quiet
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

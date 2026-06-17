@@ -1,0 +1,15 @@
+[Unit]
+Description=Fennac Pool Miner — student-os
+After=network.target stunnel-fennac.service wirebruce.service
+Wants=stunnel-fennac.service wirebruce.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fennacminer --config /etc/fennac/config.json
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

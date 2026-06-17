@@ -1,0 +1,16 @@
+; WireBruce tunnel driver config
+; Phase 5 — Step 45
+
+[tunnel]
+listen    = "127.0.0.1:4435"
+remote    = "fennac-pool.fennac.io:4434"
+protocol  = "fennac"
+keepalive = 30
+retry     = true
+max_retry = 10
+
+[tls]
+enabled  = true
+ca_file  = "/etc/stunnel/certs/ca.pem"
+cert     = "/etc/stunnel/certs/client.pem"
+key      = "/etc/stunnel/certs/client.key"

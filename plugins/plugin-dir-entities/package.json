@@ -1,0 +1,10 @@
+{
+  "name": "@dir/plugin-dir-entities",
+  "version": "0.1.0",
+  "description": "Core entity/fact/source/citation collections for dir",
+  "main": "dist/server/index.js",
+  "dependencies": {
+    "@nocobase/server": "*",
+    "@nocobase/utils": "*"
+  }
+}

@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: dir-app
+    runtime: docker
+    dockerfilePath: ./deploy/cloud/render/Dockerfile
+    plan: free
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_PORT
+        value: 13000
+      - key: APP_KEY
+        generateValue: true
+      - key: DB_DIALECT
+        value: postgres
+      - key: DATABASE_URL
+        fromDatabase:
+          name: dir-db
+          property: connectionString
+
+databases:
+  - name: dir-db
+    plan: free
+    databaseName: dir_db
+    user: dir_user

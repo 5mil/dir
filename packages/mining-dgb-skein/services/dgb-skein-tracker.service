@@ -1,11 +1,10 @@
 [Unit]
-Description=DGB Skein Share Tracker — dir stats
-After=dgb-skein.service
-Wants=dgb-skein.service
+Description=DigiByte Skein Share Tracker — dir
+After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/dir/packages/mining-dgb-skein/share-tracker.py
+ExecStart=/usr/bin/python3 /opt/dir/packages/mining-dgb-skein/dgb-share-tracker.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal

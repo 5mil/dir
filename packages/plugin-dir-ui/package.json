@@ -1,0 +1,21 @@
+{
+  "name": "@dir/plugin-dir-ui",
+  "version": "0.1.0",
+  "description": "Dir UI plugin — OOUX components, Gestalt grouping, cognitive-load minimization, skeleton loading",
+  "main": "src/index.ts",
+  "license": "MIT",
+  "dependencies": {
+    "@nocobase/client": "*",
+    "@nocobase/server": "*",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "antd": "^5.0.0",
+    "@ant-design/icons": "^5.0.0",
+    "classnames": "^2.3.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/react": "^18.0.0",
+    "@types/classnames": "^2.3.1"
+  }
+}

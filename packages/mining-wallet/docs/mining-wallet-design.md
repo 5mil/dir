@@ -1,79 +1,117 @@
-# Mining Wallet + Payout + USB ASIC + Pool Selector — Design
+# Mining Wallet, Payout, Pool Selector & USB ASIC Design
 
-## Pool Selector
+## Architecture Overview
 
-### Pre-Configured Pools (preset registry in `pool-config.js`)
+```
+[MiningTab UI]
+      │
+      ▼  /api/mining/*
+[mining-api.js]  ←→  dgb-wallet.js
+                 ←→  solana-payout.js
+                 ←→  pool-config.js
+                 ←→  payout-restart-hook.js
+                 ←→  usb-asic.js
+      │
+      ▼
+/etc/dir/
+  mining-wallet.enc   (AES-256-GCM, mode 600)
+  mining-wallet.enc.addr  (plaintext DGB address, mode 644)
+  payout-config.json  (payout mode + address, mode 600)
+  active-pool.json    (selected pool URL + worker, mode 600)
+  cpuminer.conf       (written by restart hook)
+/etc/cgminer.conf     (written by restart hook)
+```
 
-| ID | Name | URL | Fee | Region |
-|---|---|---|---|---|
-| `fennac-primary` | Fennac (Primary) | `stratum+tcp://pool.fennac.com:3333` | 0% | Global |
-| `fennac-backup` | Fennac (Backup) | `stratum+tcp://backup.fennac.com:3333` | 0% | Global |
-| `dgb-skein-dgbpool` | DGBPool.com — Skein | `stratum+tcp://skein.dgbpool.com:3056` | 0.9% | Global |
-| `dgb-skein-zpool` | Zpool — Skein | `stratum+tcp://skein.mine.zpool.ca:8533` | 0.5% | US/EU |
-| `dgb-skein-prohashing` | ProHashing — Skein | `stratum+tcp://prohashing.com:3333` | 4.99% | US |
-| `dgb-skein-unmineable` | unMineable — DGB | `stratum+tcp://rx.unmineable.com:3333` | 1% | Global |
-
-TLS URLs are available for: Fennac (3443), ProHashing (3334), unMineable (443).
-
-### Config File
-
-`/etc/dir/pool-config.json` (mode 600):
-- `active_pool_id` — which pool is currently active
-- `failover_order` — ordered list of pool IDs for failover
-- `use_tls` — whether to prefer TLS URL
-- `custom_pools` — user-added pools
-
-### API Routes (`/api/mining/pools`)
-
-| Method | Path | Description |
-|---|---|---|
-| GET | `/` | List all pools with active + failover flags |
-| GET | `/active` | Get active pool |
-| POST | `/active` | Set active pool `{ pool_id }` |
-| POST | `/failover` | Set failover order `{ order: [id, ...] }` |
-| POST | `/custom` | Add custom pool |
-| DELETE | `/custom/:id` | Remove custom pool |
-| POST | `/test` | Test pool reachability (TCP connect) `{ pool_id }` or `{ url }` |
-
-### Reachability Test
-
-TCP connect with 5s timeout — returns `{ reachable, latency_ms, error }`.
-
-### UI (PoolSelector.tsx)
-
-- Active pool banner
-- Preset pools table: name, URL, fee, region, latency badge, Set Active / Test buttons
-- Custom pools table with Remove button
-- Test All Pools button
-- Add Custom Pool form (id, name, url, algo, coin, fee, region, notes)
-
-## PIN Unlock Modal
-
-- `POST /api/mining/wallet/unlock` — validates PIN, returns masked sensitive metadata
-- `POST /api/mining/wallet/export` — validates PIN, returns full wallet material
-- Modal prompts PIN, shows public key + masked private key + derivation + creation time
-- PIN cleared from state on modal close
+---
 
 ## DGB Wallet
 
-- BIP39 24-word mnemonic + BIP44 `m/44'/20'/0'/0/0`
-- AES-256-GCM + scrypt PIN derivation
-- `/etc/dir/mining-wallet.enc` (mode 600)
-- Balance: DigiExplorer API
+- Standard: BIP39 24-word mnemonic + BIP44 HD
+- Derivation: `m/44'/20'/0'/0/0` (DGB coin type 20)
+- Address: P2PKH `0x1E` prefix (`D...`)
+- Encryption: AES-256-GCM, scrypt PIN derivation
+- Storage: `/etc/dir/mining-wallet.enc` (mode 600)
+- Balance: DigiExplorer API `https://digiexplorer.info/api/addr/{address}/balance`
+- Mnemonic: shown once on creation, never logged
+
+### API Routes
+- `GET  /api/mining/wallet` — address + balance
+- `POST /api/mining/wallet/create` — create new wallet (`{ pin }`)
+- `POST /api/mining/wallet/unlock` — validate PIN, return masked metadata
+- `POST /api/mining/wallet/export` — validate PIN, return full sensitive material (backend only)
+
+### PIN Unlock Modal
+- Modal prompts for PIN, never stores it after close
+- On success: reveals public key, masked private key, derivation path, creation time
+- Full export route exists on backend for future CLI/export tool
+
+---
 
 ## Payout Modes
 
 | Mode | Description |
 |---|---|
-| `dgb_integrated` | Integrated HD wallet |
-| `dgb_external` | User-supplied DGB address |
-| `solana` | SOL base58 address |
-| `custom` | Any coin + address |
+| `dgb_integrated` | Auto-uses integrated HD wallet address |
+| `dgb_external` | User provides any DGB `D…` address |
+| `solana` | User provides SOL base58 address |
+| `custom` | Any address + coin ticker |
+
+Changing payout config triggers `payout-restart-hook.js` automatically via `fs.watch`.
+
+---
+
+## Pool Selector
+
+### Pre-configured Pools
+
+| ID | Name | Algo | Primary |
+|---|---|---|---|
+| `fennac-skein` | Fennac (dir native) | Skein | ✅ |
+| `dgb-skein-zergpool` | Zergpool — DGB Skein | Skein | — |
+| `dgb-skein-unmineable` | unMineable — DGB Skein | Skein | — |
+| `dgb-skein-aikapool` | Aikapool — DGB Skein | Skein | — |
+| `dgb-skein-miningpoolhub` | MiningPoolHub — DGB Skein | Skein | — |
+| `dgb-odo-digipool` | DigiPool — DGB Odocrypt | Odocrypt | — |
+| `custom` | Custom Pool | custom | — |
+
+### API Routes
+- `GET  /api/mining/pools` — all pools + active pool
+- `GET  /api/mining/pools/active` — current active pool
+- `POST /api/mining/pools/select` — set active pool (`{ pool_id, url, worker, password }`)
+
+Changing active pool triggers `payout-restart-hook.js` automatically via `fs.watch`.
+
+---
+
+## Payout Restart Hook
+
+`payout-restart-hook.js` watches:
+- `/etc/dir/payout-config.json`
+- `/etc/dir/active-pool.json`
+
+On change (1.5s debounce):
+1. Reads `active-pool.json` + `payout-config.json`
+2. Writes `/etc/dir/cpuminer.conf` + `/etc/cgminer.conf`
+3. Attempts `systemctl restart dir-dgb-skein dir-dgb-skein-gpu dir-fennac`
+4. Falls back to `pkill cpuminer-multi && pkill skein-miner.py` if no systemd services found
+
+---
 
 ## USB ASIC Detection
 
-1. `lsusb` VID:PID match
-2. `/dev/ttyUSB*` serial scan
-3. cgminer API TCP probe `127.0.0.1:4028`
-4. Auto-writes `/etc/cgminer.conf`
-5. Polls every 10s, emits `asic:detected` event
+1. `lsusb` VID:PID match (GekkoScience, Antminer U-series, Block Erupter, Goldshell Mini, FTDI, custom Skein)
+2. `/dev/ttyUSB*` + `/dev/ttyACM*` serial scan
+3. cgminer API `127.0.0.1:4028` TCP probe
+4. Polls every 10s, emits `asic:detected` on new plug-in
+
+---
+
+## Security Notes
+
+- Private key: AES-256-GCM, scrypt PIN derivation, mode 600
+- Mnemonic: shown once on create, never logged
+- Payout config: mode 600
+- Active pool config: mode 600
+- Cpuminer/cgminer conf: mode 640
+- Public address cache: mode 644 (balance-only queries)
+- PIN never persisted in UI state after modal closes

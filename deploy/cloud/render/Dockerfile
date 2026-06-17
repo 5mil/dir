@@ -1,8 +1,13 @@
+# =============================================================
+# dir — Render Dockerfile
+# Wraps official NocoBase image with Render port conventions
+# =============================================================
 FROM nocobase/nocobase:latest
 
-ENV APP_ENV=production
-ENV APP_PORT=13000
+# Render assigns PORT env var; NocoBase uses APP_PORT
+# The entrypoint respects APP_PORT=10000 set in render.yaml
+EXPOSE 10000
 
-EXPOSE 13000
-
-CMD ["yarn", "nocobase", "start"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --retries=5 \
+  CMD wget -qO- http://localhost:10000/api/health || exit 1

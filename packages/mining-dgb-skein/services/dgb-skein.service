@@ -1,0 +1,16 @@
+[Unit]
+Description=DigiByte Skein Miner — dir mining stack
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/var/run/dgb-skein-miner.pid
+ExecStart=/opt/dir/packages/mining-dgb-skein/dgb-daemon.sh start
+ExecStop=/opt/dir/packages/mining-dgb-skein/dgb-daemon.sh stop
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
